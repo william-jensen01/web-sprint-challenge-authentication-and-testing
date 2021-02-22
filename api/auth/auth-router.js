@@ -1,58 +1,74 @@
 const router = require('express').Router();
+const bcryptjs = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const secret = require('../config/secret');
+const Users = require('./auth-model');
 
-router.post('/register', (req, res) => {
-  res.end('implement register, please!');
-  /*
-    IMPLEMENT
-    You are welcome to build additional middlewares to help with the endpoint's functionality.
+router.post('/register', checkBody, async (req, res) => {
+  let credentials = req.user;
 
-    1- In order to register a new account the client must provide `username` and `password`:
-      {
-        "username": "Captain Marvel", // must not exist already in the `users` table
-        "password": "foobar"          // needs to be hashed before it's saved
-      }
+  const hash = bcryptjs.hashSync(credentials.password, 10);
+  credentials.password = hash;
 
-    2- On SUCCESSFUL registration,
-      the response body should have `id`, `username` and `password`:
-      {
-        "id": 1,
-        "username": "Captain Marvel",
-        "password": "2a$08$jG.wIGR2S4hxuyWNcBf9MuoC4y0dNy7qC/LbmtuFBSdIhWks2LhpG"
-      }
-
-    3- On FAILED registration due to `username` or `password` missing from the request body,
-      the response body should include a string exactly as follows: "username and password required".
-
-    4- On FAILED registration due to the `username` being taken,
-      the response body should include a string exactly as follows: "username taken".
-  */
+  try {
+    const newUser = await Users.add(credentials);
+    res.status(201).send(newUser)
+  } catch (err) {
+    res.status(500).json({ message: "username taken" })
+  }
 });
 
-router.post('/login', (req, res) => {
-  res.end('implement login, please!');
-  /*
-    IMPLEMENT
-    You are welcome to build additional middlewares to help with the endpoint's functionality.
+router.post('/login', checkBody, async (req, res) => {
+  // const { username, password } = req.user;
 
-    1- In order to log into an existing account the client must provide `username` and `password`:
-      {
-        "username": "Captain Marvel",
-        "password": "foobar"
-      }
+  // try {
+  //   const [user] = await Users.findBy(username);
 
-    2- On SUCCESSFUL login,
-      the response body should have `message` and `token`:
-      {
-        "message": "welcome, Captain Marvel",
-        "token": "eyJhbGciOiJIUzI ... ETC ... vUPjZYDSa46Nwz8"
-      }
-
-    3- On FAILED login due to `username` or `password` missing from the request body,
-      the response body should include a string exactly as follows: "username and password required".
-
-    4- On FAILED login due to `username` not existing in the db, or `password` being incorrect,
-      the response body should include a string exactly as follows: "invalid credentials".
-  */
+  //   if (user) {
+  //     if (bcryptjs.compareSync(password, user.password)) {
+  //       const token = generateToken(user);
+  //       res.status(200).json({ message: `welcome ${user.username}`, token });
+  //     } else {
+  //       res.status(400).json({ message: "invalid credentials" });
+  //     }
+  //   } else {
+  //     res.status(400).json({ message: "invalid credentials" });
+  //   }
+  // } catch (err) {
+  //   res.status(500).json({ message: "invalid credentials" });
+  // }
+  try {
+    const user = await Users.findBy({ username: req.user.username });
+    if (user && bcryptjs.compareSync(req.user.password, user.password)) {
+      const token = generateToken(user);
+      res.status(200).json({ message: `welcome ${user.username}`, token });
+    } else {
+      res.status(400).json({ message: "invalid credentials" });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "invalid credentials" });
+  }
 });
+
+function checkBody(req, res, next) {
+  const user = req.body;
+  if (!user || !user.username || !user.password) {
+    res.status(400).json({ message: "username and password required" });
+  } else {
+    req.user = user;
+    next();
+  }
+}
+
+function generateToken(user) {
+  const payload = {
+    subject: user.id,
+    username: user.username
+  };
+  const options = {
+    expiresIn: "1d"
+  };
+  return jwt.sign(payload, secret.jwtSecret, options);
+}
 
 module.exports = router;
